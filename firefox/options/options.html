@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clipboard Modifier Import / Export</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Clipboard Modifier</p>
+      <h1>Import / Export Rules</h1>
+      <p class="intro">Use this full-page view in Firefox when you want to import or export rule sets.</p>
+    </header>
+
+    <section class="panel">
+      <h2>Import / Export</h2>
+      <p class="muted">Imports accept a JSON array of rule objects. Imported rules get fresh internal IDs automatically.</p>
+
+      <div id="io-error" class="error hidden"></div>
+      <div id="io-status" class="status hidden"></div>
+
+      <div class="actions">
+        <button id="btn-export" class="secondary">Export Rules</button>
+        <button id="btn-import" class="primary">Import Rules</button>
+      </div>
+
+      <div id="import-confirm" class="import-confirm hidden">
+        <p id="import-confirm-msg" class="import-confirm-msg"></p>
+        <div class="actions">
+          <button id="btn-import-replace" class="primary">Replace</button>
+          <button id="btn-import-append" class="secondary">Append</button>
+          <button id="btn-import-cancel" class="secondary">Cancel</button>
+        </div>
+      </div>
+
+      <input type="file" id="import-file-input" accept=".json,application/json" class="hidden" />
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

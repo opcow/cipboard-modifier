@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clipboard Modifier</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Clipboard Modifier</h1>
+    <p class="subtitle">Regex rules applied on copy</p>
+  </header>
+
+  <main>
+    <section id="settings-section">
+      <h2>Polling</h2>
+      <div class="toggle-row">
+        <label class="toggle-label" for="polling-enabled">
+          <span>Enable clipboard polling</span>
+          <input type="checkbox" id="polling-enabled" />
+        </label>
+        <button
+          type="button"
+          id="btn-polling-help"
+          class="help-button"
+          aria-expanded="false"
+          aria-controls="polling-help"
+          title="What does this do?"
+        >?</button>
+      </div>
+      <div id="polling-help" class="help-panel hidden">
+        <p><strong>On:</strong> Also modifies copies from browser UI like the URL bar and Firefox menus. This gives the widest coverage, but uses periodic background clipboard checks.</p>
+        <p><strong>Off:</strong> Only webpage copy actions are modified. This reduces background clipboard activity, but browser UI copies are left unchanged.</p>
+      </div>
+      <label for="poll-interval">Polling interval <span class="hint">(milliseconds)</span></label>
+      <input type="number" id="poll-interval" min="250" max="4000" step="50" placeholder="1000" />
+      <p class="muted settings-copy">Used for browser UI copy sources such as the URL bar.</p>
+      <div id="settings-error" class="error hidden"></div>
+      <div id="settings-status" class="status hidden"></div>
+      <div class="form-buttons">
+        <button id="btn-save-settings">Save Settings</button>
+      </div>
+    </section>
+
+    <section id="rules-section">
+      <div id="rules-list">
+        <!-- Rules rendered here by popup.js -->
+      </div>
+      <p id="no-rules-msg" class="muted">No rules yet. Add one below.</p>
+    </section>
+
+    <section id="form-section">
+      <h2 id="form-title">Add Rule</h2>
+      <label for="rule-name">Name</label>
+      <input type="text" id="rule-name" placeholder="e.g. Strip URLs" />
+
+      <label for="rule-pattern">Pattern <span class="hint">(regex)</span></label>
+      <input type="text" id="rule-pattern" placeholder="e.g. https?://\S+" />
+
+      <label for="rule-flags">Flags <span class="hint">(g, i, m, s …)</span></label>
+      <input type="text" id="rule-flags" placeholder="g" maxlength="10" />
+
+      <label for="rule-replacement">Replacement <span class="hint">(supports $1, $2 …)</span></label>
+      <input type="text" id="rule-replacement" placeholder="e.g. [LINK] or leave blank" />
+
+      <div id="form-error" class="error hidden"></div>
+
+      <div class="form-buttons">
+        <button id="btn-save">Save Rule</button>
+        <button id="btn-cancel" class="secondary hidden">Cancel</button>
+      </div>
+    </section>
+
+    <section id="io-section">
+      <h2>Import / Export</h2>
+      <p class="muted io-copy">Open the full-page tools for importing or exporting rules.</p>
+      <div class="form-buttons">
+        <button id="btn-open-import-export">Open Import / Export Page</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>
