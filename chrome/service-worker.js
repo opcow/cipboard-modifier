@@ -113,6 +113,7 @@ async function initialize() {
   initializing = (async () => {
     await loadState();
     await updateBrowserFocus();
+    badgeActive = true; // Chrome persists badge text across sw restarts; force the clear to run
     await updateBadge(false);
     await syncOffscreenState();
   })();
