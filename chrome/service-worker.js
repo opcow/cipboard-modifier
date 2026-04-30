@@ -15,6 +15,7 @@ let cachedState = {
 let creatingOffscreen = null;
 let initializing = null;
 let badgeActive = false;
+let lastOriginalText = "";
 
 function normalizePollInterval(value) {
   const numeric = Number(value);
@@ -186,7 +187,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "content-copy-applied") {
     sendOffscreenMessage(message)
-      .then(() => updateBadge(Boolean(message.text)))
+      .then(() => {
+        if (message.text) lastOriginalText = message.original || "";
+        return updateBadge(Boolean(message.text));
+      })
       .then(() => syncOffscreenState())
       .then(() => sendResponse({ ok: true }))
       .catch((error) => {
@@ -197,16 +201,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "clipboard-modified") {
-    updateBadge(true)
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
+    lastOriginalText = message.original || "";
+    updateBadge(true).catch(() => {});
+    sendResponse({ ok: true });
+    return false;
   }
 
   if (message?.type === "clipboard-cleared") {
-    updateBadge(false)
+    lastOriginalText = "";
+    updateBadge(false).catch(() => {});
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === "content-copy-unmodified") {
+    lastOriginalText = "";
+    updateBadge(false).catch(() => {});
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === "get-badge-state") {
+    sendResponse({ badgeActive, canUndo: !!lastOriginalText });
+    return false;
+  }
+
+  if (message?.type === "apply-rules-now") {
+    sendOffscreenMessage({ type: "force-apply-rules" })
+      .then((result) => {
+        if (!result?.ok) {
+          return result;
+        }
+
+        if (result.modified && result.original) {
+          lastOriginalText = result.original;
+          return updateBadge(true).then(() => result);
+        }
+
+        lastOriginalText = "";
+        return updateBadge(false).then(() => result);
+      })
+      .then((result) => sendResponse({ ok: Boolean(result?.ok), modified: Boolean(result?.modified) }))
+      .catch((error) => {
+        console.error("[Clipboard Modifier] Failed to apply rules:", error);
+        sendResponse({ ok: false });
+      });
+    return true;
+  }
+
+  if (message?.type === "undo-replacement") {
+    if (!lastOriginalText) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    const original = lastOriginalText;
+    sendOffscreenMessage({ type: "restore-clipboard", text: original })
+      .then(() => {
+        lastOriginalText = "";
+        return updateBadge(false);
+      })
       .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+      .catch((error) => {
+        console.error("[Clipboard Modifier] Failed to undo replacement:", error);
+        sendResponse({ ok: false });
+      });
     return true;
   }
 
@@ -226,4 +284,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 initialize().catch((error) => {
   console.error("[Clipboard Modifier] Initial startup failed:", error);
 });
+
+
 

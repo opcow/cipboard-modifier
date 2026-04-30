@@ -25,11 +25,15 @@ const settingsError = document.getElementById("settings-error");
 const settingsStatus = document.getElementById("settings-status");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 const btnOpenImportExport = document.getElementById("btn-open-import-export");
+const btnApplyUndo = document.getElementById("btn-apply-undo");
+const actionStatus = document.getElementById("action-status");
+const actionError = document.getElementById("action-error");
 
 let rules = [];
 let editingId = null;
 let pollingEnabled = true;
 let pollingHelpOpen = false;
+let badgeActive = false;
 
 async function loadState() {
   const result = await chrome.storage.local.get(["rules", "pollIntervalMs", "pollingEnabled"]);
@@ -88,6 +92,27 @@ function clearSettingsStatus() {
 
 function syncPollingControls() {
   inputPollInterval.disabled = !pollingEnabled;
+}
+
+function showActionStatus(msg) {
+  actionStatus.textContent = msg;
+  actionStatus.classList.remove("hidden");
+  actionError.textContent = "";
+  actionError.classList.add("hidden");
+}
+
+function showActionError(msg) {
+  actionError.textContent = msg;
+  actionError.classList.remove("hidden");
+  actionStatus.textContent = "";
+  actionStatus.classList.add("hidden");
+}
+
+function clearActionMessage() {
+  actionStatus.textContent = "";
+  actionStatus.classList.add("hidden");
+  actionError.textContent = "";
+  actionError.classList.add("hidden");
 }
 
 function setPollingHelpOpen(isOpen) {
@@ -317,8 +342,47 @@ btnOpenImportExport.addEventListener("click", async () => {
   window.close();
 });
 
+function syncApplyUndoButton() {
+  btnApplyUndo.textContent = badgeActive ? "Undo Last Replacement" : "Apply Rules";
+}
+
+btnApplyUndo.addEventListener("click", async () => {
+  clearActionMessage();
+
+  if (badgeActive) {
+    const result = await chrome.runtime.sendMessage({ type: "undo-replacement" });
+    if (result?.ok) {
+      badgeActive = false;
+      syncApplyUndoButton();
+      showActionStatus("Clipboard restored.");
+    } else {
+      showActionError("Could not restore the previous clipboard text.");
+    }
+  } else {
+    const result = await chrome.runtime.sendMessage({ type: "apply-rules-now" });
+    if (!result?.ok) {
+      showActionError("Could not read or update the clipboard.");
+      return;
+    }
+
+    if (result.modified) {
+      badgeActive = true;
+      syncApplyUndoButton();
+      showActionStatus("Rules applied to the current clipboard text.");
+    } else {
+      showActionStatus("No matching rules for the current clipboard text.");
+    }
+  }
+});
+
 (async () => {
   await loadState();
   setPollingHelpOpen(false);
   render();
+  clearActionMessage();
+
+  const state = await chrome.runtime.sendMessage({ type: "get-badge-state" });
+  badgeActive = state?.badgeActive || false;
+  syncApplyUndoButton();
 })();
+

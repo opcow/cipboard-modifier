@@ -238,7 +238,8 @@ button:hover { opacity: 0.85; }
 
 #btn-save,
 #btn-save-settings,
-#btn-open-import-export { background: #cba6f7; color: #1e1e2e; }
+#btn-open-import-export,
+#btn-apply-undo { background: #cba6f7; color: #1e1e2e; }
 button.secondary { background: #313244; color: #cdd6f4; flex: 0 0 auto; padding: 7px 14px; }
 
 .hidden { display: none !important; }

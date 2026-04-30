@@ -66,10 +66,11 @@ function applyRules(text) {
   return result;
 }
 
-function notifyBackgroundOfHandledCopy(text) {
+function notifyBackgroundOfHandledCopy(text, original) {
   safeSendMessage({
     type: "content-copy-applied",
     text,
+    original,
   });
 }
 
@@ -99,6 +100,25 @@ function getSelectedText(event) {
   return window.getSelection()?.toString() || "";
 }
 
+function selectionContainsRichMarkup() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return false;
+  }
+
+  const fragment = selection.getRangeAt(0).cloneContents();
+  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT);
+  return Boolean(walker.nextNode());
+}
+
+function notifyBackgroundOfUnmodifiedCopy(event) {
+  setTimeout(() => {
+    if (!event.defaultPrevented) {
+      safeSendMessage({ type: "content-copy-unmodified" });
+    }
+  }, 0);
+}
+
 document.addEventListener(
   "copy",
   (event) => {
@@ -106,12 +126,24 @@ document.addEventListener(
     if (!selectedText) return;
 
     const modified = applyRules(selectedText);
-    if (modified === selectedText) return;
+    if (modified === selectedText) {
+      notifyBackgroundOfUnmodifiedCopy(event);
+      return;
+    }
+
+    if (selectionContainsRichMarkup()) {
+      console.info("[Clipboard Modifier] Skipping rich-text copy transform to preserve clipboard formats.");
+      notifyBackgroundOfUnmodifiedCopy(event);
+      return;
+    }
+
     if (!event.clipboardData) return;
 
     event.preventDefault();
     event.clipboardData.setData("text/plain", modified);
-    notifyBackgroundOfHandledCopy(modified);
+    notifyBackgroundOfHandledCopy(modified, selectedText);
   },
   true
 );
+
+

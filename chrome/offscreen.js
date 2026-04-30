@@ -30,6 +30,10 @@ function getEnabledRules() {
   return (currentState.rules || []).filter((rule) => rule.enabled);
 }
 
+function shouldPollClipboard() {
+  return currentState.pollingEnabled && currentState.browserHasFocus && getEnabledRules().length > 0;
+}
+
 function applyRules(text, rules) {
   let result = text;
   for (const rule of rules) {
@@ -49,8 +53,8 @@ function wasHandledByContentScript(text) {
   return text === lastContentWrite.text;
 }
 
-function notifyClipboardState(type) {
-  chrome.runtime.sendMessage({ type }).catch(() => {
+function notifyClipboardState(type, extra = {}) {
+  chrome.runtime.sendMessage({ type, ...extra }).catch(() => {
     // Ignore transient badge-sync failures.
   });
 }
@@ -61,7 +65,7 @@ function restartPolling() {
     pollTimerId = null;
   }
 
-  if (!currentState.pollingEnabled || !currentState.browserHasFocus) {
+  if (!shouldPollClipboard()) {
     return;
   }
 
@@ -157,7 +161,7 @@ async function poll() {
       try {
         await writeClipboardText(modified);
         lastClipboard = modified;
-        notifyClipboardState("clipboard-modified");
+        notifyClipboardState("clipboard-modified", { original: current });
       } catch {
         lastClipboard = current;
         notifyClipboardState("clipboard-cleared");
@@ -168,6 +172,30 @@ async function poll() {
     }
   } finally {
     pollInFlight = false;
+  }
+}
+
+async function forceApplyRules() {
+  let current;
+  try {
+    current = await readClipboardText();
+  } catch {
+    return { ok: false };
+  }
+
+  const modified = applyRules(current, getEnabledRules());
+  if (modified !== current) {
+    try {
+      await writeClipboardText(modified);
+      lastClipboard = modified;
+      return { ok: true, modified: true, original: current };
+    } catch {
+      lastClipboard = current;
+      return { ok: false };
+    }
+  } else {
+    lastClipboard = current;
+    return { ok: true, modified: false };
   }
 }
 
@@ -213,6 +241,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === "force-apply-rules") {
+    forceApplyRules()
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "restore-clipboard") {
+    writeClipboardText(message.text || "")
+      .then(() => {
+        lastClipboard = message.text || "";
+        sendResponse({ ok: true });
+      })
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   return undefined;
 });
 
@@ -229,3 +274,4 @@ chrome.runtime.sendMessage({ type: "offscreen-ready" }, (response) => {
 
 ensureStateRefreshLoop();
 void refreshStateFromServiceWorker();
+
