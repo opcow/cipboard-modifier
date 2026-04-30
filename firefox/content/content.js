@@ -8,10 +8,13 @@
  *
  * Key design decisions:
  *  - Rules are cached in memory and kept fresh via a storage change listener.
- *    This means the copy handler is fully synchronous — no async/await, so
+ *    This means the copy handler is fully synchronous - no async/await, so
  *    event.preventDefault() is guaranteed to fire in the same tick as the
  *    user gesture, which is required for clipboardData to be writable.
  *  - On load we do one async fetch to prime the cache.
+ *  - When Firefox is preserving rich clipboard formats, the content script
+ *    defers matching copies to the background poller instead of overwriting
+ *    the clipboard with plain text.
  */
 
 let cachedRules = [];
@@ -28,32 +31,48 @@ browser.storage.onChanged.addListener((changes) => {
   }
 });
 
-/**
- * Apply all enabled regex rules to a string.
- * @param {string} text
- * @returns {string}
- */
 function applyRules(text) {
   let result = text;
+  let matched = false;
+
   for (const rule of cachedRules) {
     if (!rule.enabled) continue;
     try {
       const regex = new RegExp(rule.pattern, rule.flags || "");
+      if (regex.test(text)) {
+        matched = true;
+      }
       result = result.replace(regex, rule.replacement);
     } catch (e) {
       console.warn(`[Clipboard Modifier] Bad regex in rule "${rule.name}": ${e.message}`);
     }
   }
-  return result;
+
+  return { result, matched };
 }
 
-function notifyBackgroundOfHandledCopy(text) {
+function notifyBackgroundOfHandledCopy(text, original) {
   browser.runtime.sendMessage({
     type: "content-copy-applied",
     text,
-  }).catch(() => {
-    // Ignore transient messaging failures; the copy already succeeded.
-  });
+    original,
+  }).catch(() => {});
+}
+
+function notifyBackgroundOfDeferredCopy() {
+  browser.runtime.sendMessage({
+    type: "content-copy-deferred",
+  }).catch(() => {});
+}
+
+function notifyBackgroundOfUnmodifiedCopy(event) {
+  setTimeout(() => {
+    if (!event.defaultPrevented) {
+      browser.runtime.sendMessage({
+        type: "content-copy-unmodified",
+      }).catch(() => {});
+    }
+  }, 0);
 }
 
 function getSelectionFromEditable(element) {
@@ -82,24 +101,45 @@ function getSelectedText(event) {
   return window.getSelection()?.toString() || "";
 }
 
-/**
- * Synchronous copy handler.
- * event.preventDefault() MUST be called in the same tick as the event
- * for clipboardData.setData() to work — no async/await here.
- */
+function selectionContainsRichMarkup() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return false;
+  }
+
+  // Any element node means Firefox is likely building rich clipboard formats
+  // that we should leave intact and handle via background polling instead.
+  const fragment = selection.getRangeAt(0).cloneContents();
+  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT);
+  return Boolean(walker.nextNode());
+}
+
 document.addEventListener(
   "copy",
   (event) => {
     const selectedText = getSelectedText(event);
     if (!selectedText) return;
 
-    const modified = applyRules(selectedText);
-    if (modified === selectedText) return;
-    if (!event.clipboardData) return;
+    const { result: modified, matched } = applyRules(selectedText);
+    if (!matched || modified === selectedText) {
+      notifyBackgroundOfUnmodifiedCopy(event);
+      return;
+    }
+
+    if (selectionContainsRichMarkup()) {
+      console.info("[Clipboard Modifier] Skipping rich-text copy transform to preserve clipboard formats.");
+      notifyBackgroundOfDeferredCopy();
+      return;
+    }
+
+    if (!event.clipboardData) {
+      notifyBackgroundOfDeferredCopy();
+      return;
+    }
 
     event.preventDefault();
     event.clipboardData.setData("text/plain", modified);
-    notifyBackgroundOfHandledCopy(modified);
+    notifyBackgroundOfHandledCopy(modified, selectedText);
   },
-  true // Capture phase.
+  true
 );

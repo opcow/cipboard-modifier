@@ -18,33 +18,37 @@ const DEFAULT_POLL_INTERVAL_MS = 1000;
 const MIN_POLL_INTERVAL_MS = 250;
 const MAX_POLL_INTERVAL_MS = 4000;
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
-const rulesList           = document.getElementById("rules-list");
-const noRulesMsg          = document.getElementById("no-rules-msg");
-const formTitle           = document.getElementById("form-title");
-const inputName           = document.getElementById("rule-name");
-const inputPattern        = document.getElementById("rule-pattern");
-const inputFlags          = document.getElementById("rule-flags");
-const inputReplace        = document.getElementById("rule-replacement");
-const formError           = document.getElementById("form-error");
-const btnSave             = document.getElementById("btn-save");
-const btnCancel           = document.getElementById("btn-cancel");
-const inputPollInterval   = document.getElementById("poll-interval");
+// -- DOM refs ---------------------------------------------------------------
+const rulesList = document.getElementById("rules-list");
+const noRulesMsg = document.getElementById("no-rules-msg");
+const formTitle = document.getElementById("form-title");
+const inputName = document.getElementById("rule-name");
+const inputPattern = document.getElementById("rule-pattern");
+const inputFlags = document.getElementById("rule-flags");
+const inputReplace = document.getElementById("rule-replacement");
+const formError = document.getElementById("form-error");
+const btnSave = document.getElementById("btn-save");
+const btnCancel = document.getElementById("btn-cancel");
+const inputPollInterval = document.getElementById("poll-interval");
 const inputPollingEnabled = document.getElementById("polling-enabled");
-const btnPollingHelp      = document.getElementById("btn-polling-help");
-const pollingHelp         = document.getElementById("polling-help");
-const settingsError       = document.getElementById("settings-error");
-const settingsStatus      = document.getElementById("settings-status");
-const btnSaveSettings     = document.getElementById("btn-save-settings");
+const btnPollingHelp = document.getElementById("btn-polling-help");
+const pollingHelp = document.getElementById("polling-help");
+const settingsError = document.getElementById("settings-error");
+const settingsStatus = document.getElementById("settings-status");
+const btnSaveSettings = document.getElementById("btn-save-settings");
 const btnOpenImportExport = document.getElementById("btn-open-import-export");
+const btnApplyUndo = document.getElementById("btn-apply-undo");
+const actionStatus = document.getElementById("action-status");
+const actionError = document.getElementById("action-error");
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// -- State ------------------------------------------------------------------
 let rules = [];
-let editingId = null; // null = adding new rule
+let editingId = null;
 let pollingEnabled = true;
 let pollingHelpOpen = false;
+let badgeActive = false;
 
-// ── Storage helpers ───────────────────────────────────────────────────────────
+// -- Storage helpers --------------------------------------------------------
 async function loadState() {
   const result = await browser.storage.local.get(["rules", "pollIntervalMs", "pollingEnabled"]);
   rules = result.rules || [];
@@ -66,7 +70,7 @@ async function savePollingEnabled(enabled) {
   await browser.storage.local.set({ pollingEnabled: enabled });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers ----------------------------------------------------------------
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -104,13 +108,34 @@ function syncPollingControls() {
   inputPollInterval.disabled = !pollingEnabled;
 }
 
+function showActionStatus(msg) {
+  actionStatus.textContent = msg;
+  actionStatus.classList.remove("hidden");
+  actionError.textContent = "";
+  actionError.classList.add("hidden");
+}
+
+function showActionError(msg) {
+  actionError.textContent = msg;
+  actionError.classList.remove("hidden");
+  actionStatus.textContent = "";
+  actionStatus.classList.add("hidden");
+}
+
+function clearActionMessage() {
+  actionStatus.textContent = "";
+  actionStatus.classList.add("hidden");
+  actionError.textContent = "";
+  actionError.classList.add("hidden");
+}
+
 function setPollingHelpOpen(isOpen) {
   pollingHelpOpen = isOpen;
   pollingHelp.classList.toggle("hidden", !isOpen);
   btnPollingHelp.setAttribute("aria-expanded", String(isOpen));
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// -- Render -----------------------------------------------------------------
 function render() {
   rulesList.innerHTML = "";
   noRulesMsg.classList.toggle("hidden", rules.length > 0);
@@ -136,7 +161,7 @@ function render() {
 
     const patEl = document.createElement("div");
     patEl.className = "rule-pattern";
-    patEl.textContent = `/${rule.pattern}/${rule.flags}  →  ${rule.replacement || "«empty»"}`;
+    patEl.textContent = `/${rule.pattern}/${rule.flags}  ->  ${rule.replacement || "<empty>"}`;
 
     info.append(nameEl, patEl);
 
@@ -173,9 +198,9 @@ function render() {
   }
 }
 
-// ── Rule operations ───────────────────────────────────────────────────────────
+// -- Rule operations --------------------------------------------------------
 async function toggleRule(id, enabled) {
-  const rule = rules.find((r) => r.id === id);
+  const rule = rules.find((item) => item.id === id);
   if (rule) {
     rule.enabled = enabled;
     await saveRules();
@@ -184,14 +209,14 @@ async function toggleRule(id, enabled) {
 }
 
 async function deleteRule(id) {
-  rules = rules.filter((r) => r.id !== id);
+  rules = rules.filter((rule) => rule.id !== id);
   if (editingId === id) cancelEdit();
   await saveRules();
   render();
 }
 
 async function moveRule(id, direction) {
-  const idx = rules.findIndex((r) => r.id === id);
+  const idx = rules.findIndex((rule) => rule.id === id);
   const target = idx + direction;
   if (target < 0 || target >= rules.length) return;
   [rules[idx], rules[target]] = [rules[target], rules[idx]];
@@ -199,7 +224,7 @@ async function moveRule(id, direction) {
   render();
 }
 
-// ── Form logic ────────────────────────────────────────────────────────────────
+// -- Form logic -------------------------------------------------------------
 function showError(msg) {
   formError.textContent = msg;
   formError.classList.remove("hidden");
@@ -212,7 +237,7 @@ function clearError() {
 
 function startEdit(id) {
   editingId = id;
-  const rule = rules.find((r) => r.id === id);
+  const rule = rules.find((rule) => rule.id === id);
   if (!rule) return;
 
   formTitle.textContent = "Edit Rule";
@@ -229,7 +254,10 @@ function startEdit(id) {
 function cancelEdit() {
   editingId = null;
   formTitle.textContent = "Add Rule";
-  inputName.value = inputPattern.value = inputFlags.value = inputReplace.value = "";
+  inputName.value = "";
+  inputPattern.value = "";
+  inputFlags.value = "";
+  inputReplace.value = "";
   btnSave.textContent = "Save Rule";
   btnCancel.classList.add("hidden");
   clearError();
@@ -243,7 +271,7 @@ btnSave.addEventListener("click", async () => {
   const name = inputName.value.trim();
   const pattern = inputPattern.value.trim();
   const flags = inputFlags.value.trim();
-  const replace = inputReplace.value;
+  const replacement = inputReplace.value;
 
   if (!pattern) {
     showError("Pattern is required.");
@@ -258,12 +286,12 @@ btnSave.addEventListener("click", async () => {
   }
 
   if (editingId) {
-    const rule = rules.find((r) => r.id === editingId);
+    const rule = rules.find((item) => item.id === editingId);
     if (rule) {
       rule.name = name || pattern;
       rule.pattern = pattern;
       rule.flags = flags;
-      rule.replacement = replace;
+      rule.replacement = replacement;
     }
     cancelEdit();
   } else {
@@ -272,10 +300,10 @@ btnSave.addEventListener("click", async () => {
       name: name || pattern,
       pattern,
       flags,
-      replacement: replace,
+      replacement,
       enabled: true,
     });
-    inputName.value = inputPattern.value = inputFlags.value = inputReplace.value = "";
+    cancelEdit();
   }
 
   await saveRules();
@@ -325,8 +353,8 @@ btnPollingHelp.addEventListener("click", () => {
   setPollingHelpOpen(!pollingHelpOpen);
 });
 
-// ── Custom spin buttons ───────────────────────────────────────────────────────
-const spinUp   = document.getElementById("spin-up");
+// -- Custom spin buttons ----------------------------------------------------
+const spinUp = document.getElementById("spin-up");
 const spinDown = document.getElementById("spin-down");
 
 function stepInput(direction) {
@@ -338,7 +366,7 @@ function stepInput(direction) {
   inputPollInterval.dispatchEvent(new Event("input"));
 }
 
-spinUp.addEventListener("click",   () => stepInput(+1));
+spinUp.addEventListener("click", () => stepInput(+1));
 spinDown.addEventListener("click", () => stepInput(-1));
 
 btnOpenImportExport.addEventListener("click", async () => {
@@ -346,9 +374,49 @@ btnOpenImportExport.addEventListener("click", async () => {
   window.close();
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// -- Apply / Undo button ----------------------------------------------------
+function syncApplyUndoButton() {
+  btnApplyUndo.textContent = badgeActive ? "Undo Last Replacement" : "Apply Rules";
+}
+
+btnApplyUndo.addEventListener("click", async () => {
+  clearActionMessage();
+
+  if (badgeActive) {
+    const result = await browser.runtime.sendMessage({ type: "undo-replacement" });
+    if (result?.ok) {
+      badgeActive = false;
+      syncApplyUndoButton();
+      showActionStatus("Clipboard restored.");
+    } else {
+      showActionError("Could not restore the previous clipboard text.");
+    }
+  } else {
+    const result = await browser.runtime.sendMessage({ type: "apply-rules-now" });
+    if (!result?.ok) {
+      showActionError("Could not read or update the clipboard.");
+      return;
+    }
+
+    if (result.modified) {
+      badgeActive = true;
+      syncApplyUndoButton();
+      showActionStatus("Rules applied to the current clipboard text.");
+    } else {
+      showActionStatus("No matching rules for the current clipboard text.");
+    }
+  }
+});
+
+// -- Init -------------------------------------------------------------------
 (async () => {
   await loadState();
   setPollingHelpOpen(false);
   render();
+  clearActionMessage();
+
+  const state = await browser.runtime.sendMessage({ type: "get-badge-state" });
+  badgeActive = Boolean(state?.badgeActive || state?.canUndo);
+  syncApplyUndoButton();
 })();
+
