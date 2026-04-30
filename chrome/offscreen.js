@@ -13,7 +13,7 @@ let currentState = {
   rules: [],
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   pollingEnabled: true,
-  browserHasFocus: true,
+  browserHasFocus: false,
 };
 
 function normalizePollInterval(value) {
@@ -59,6 +59,27 @@ function notifyClipboardState(type, extra = {}) {
   });
 }
 
+async function syncStateFromServiceWorker() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "offscreen-sync-request" });
+    if (response?.state) {
+      updateState(response.state);
+    }
+  } catch {
+    // Ignore transient service worker wake/suspend races.
+  }
+}
+
+async function requestImmediatePoll() {
+  lastClipboard = "";
+  await syncStateFromServiceWorker();
+  if (!shouldPollClipboard()) {
+    return;
+  }
+
+  await poll();
+}
+
 function restartPolling() {
   if (pollTimerId !== null) {
     clearInterval(pollTimerId);
@@ -78,7 +99,7 @@ function updateState(nextState) {
     rules: nextState.rules || [],
     pollIntervalMs: normalizePollInterval(nextState.pollIntervalMs),
     pollingEnabled: nextState.pollingEnabled !== false,
-    browserHasFocus: nextState.browserHasFocus !== false,
+    browserHasFocus: nextState.browserHasFocus === true,
   };
 
   restartPolling();
@@ -138,10 +159,12 @@ async function writeClipboardText(text) {
 }
 
 async function poll() {
-  if (pollInFlight) return;
+  if (pollInFlight || !shouldPollClipboard()) return;
   pollInFlight = true;
 
   try {
+    if (!shouldPollClipboard()) return;
+
     let current;
     try {
       current = await readClipboardText();
@@ -156,9 +179,17 @@ async function poll() {
       return;
     }
 
+    if (!shouldPollClipboard()) {
+      return;
+    }
+
     const modified = applyRules(current, getEnabledRules());
     if (modified !== current) {
       try {
+        if (!shouldPollClipboard()) {
+          lastClipboard = current;
+          return;
+        }
         await writeClipboardText(modified);
         lastClipboard = modified;
         notifyClipboardState("clipboard-modified", { original: current });
@@ -176,6 +207,10 @@ async function poll() {
 }
 
 async function forceApplyRules() {
+  if (!shouldPollClipboard()) {
+    return { ok: false };
+  }
+
   let current;
   try {
     current = await readClipboardText();
@@ -186,6 +221,10 @@ async function forceApplyRules() {
   const modified = applyRules(current, getEnabledRules());
   if (modified !== current) {
     try {
+      if (!shouldPollClipboard()) {
+        lastClipboard = current;
+        return { ok: false };
+      }
       await writeClipboardText(modified);
       lastClipboard = modified;
       return { ok: true, modified: true, original: current };
@@ -200,14 +239,7 @@ async function forceApplyRules() {
 }
 
 async function refreshStateFromServiceWorker() {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "offscreen-sync-request" });
-    if (response?.state) {
-      updateState(response.state);
-    }
-  } catch {
-    // Ignore transient service worker wake/suspend races.
-  }
+  await syncStateFromServiceWorker();
 }
 
 function ensureStateRefreshLoop() {
@@ -237,6 +269,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       lastClipboard = lastContentWrite.text;
     }
 
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message?.type === "content-copy-deferred") {
+    void requestImmediatePoll();
     sendResponse({ ok: true });
     return false;
   }

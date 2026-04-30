@@ -74,6 +74,10 @@ function notifyBackgroundOfHandledCopy(text, original) {
   });
 }
 
+function notifyBackgroundOfDeferredCopy() {
+  safeSendMessage({ type: "content-copy-deferred" });
+}
+
 function getSelectionFromEditable(element) {
   if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
     return "";
@@ -133,11 +137,14 @@ document.addEventListener(
 
     if (selectionContainsRichMarkup()) {
       console.info("[Clipboard Modifier] Skipping rich-text copy transform to preserve clipboard formats.");
-      notifyBackgroundOfUnmodifiedCopy(event);
+      notifyBackgroundOfDeferredCopy();
       return;
     }
 
-    if (!event.clipboardData) return;
+    if (!event.clipboardData) {
+      notifyBackgroundOfDeferredCopy();
+      return;
+    }
 
     event.preventDefault();
     event.clipboardData.setData("text/plain", modified);

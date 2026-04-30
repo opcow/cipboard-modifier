@@ -9,7 +9,7 @@ let cachedState = {
   rules: [],
   pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   pollingEnabled: true,
-  browserHasFocus: true,
+  browserHasFocus: false,
 };
 
 let creatingOffscreen = null;
@@ -39,7 +39,7 @@ async function updateBrowserFocus() {
     const focusedWindow = await chrome.windows.getLastFocused();
     cachedState.browserHasFocus = Boolean(focusedWindow?.focused);
   } catch {
-    cachedState.browserHasFocus = true;
+    cachedState.browserHasFocus = false;
   }
 }
 
@@ -200,6 +200,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "content-copy-deferred") {
+    sendOffscreenMessage(message)
+      .then(() => {
+        lastOriginalText = "";
+        return updateBadge(false);
+      })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        console.error("[Clipboard Modifier] Failed to forward deferred content copy:", error);
+        sendResponse({ ok: false, error: String(error) });
+      });
+    return true;
+  }
+
   if (message?.type === "clipboard-modified") {
     lastOriginalText = message.original || "";
     updateBadge(true).catch(() => {});
@@ -274,8 +288,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "offscreen-sync-request") {
-    sendResponse({ ok: true, state: cachedState });
-    return false;
+    updateBrowserFocus()
+      .then(() => sendResponse({ ok: true, state: cachedState }))
+      .catch(() => sendResponse({ ok: true, state: cachedState }));
+    return true;
   }
 
   return undefined;
