@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "firefox",
+      "request": "launch",
+      "name": "Firefox (Nightly)",
+      "firefoxExecutable": "C:\\Program Files\\Firefox Nightly\\firefox.exe",
+      "profileDir": "C:\\Users\\mitch\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\tw5454mt.addon-dev",
+      "addonPath": "${workspaceFolder}/firefox"
+    },
+    {
+      "type": "pwa-chrome",
+      "request": "launch",
+      "name": "Chrome (Page Debug)",
+      "runtimeExecutable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "runtimeArgs": [
+        "--user-data-dir=${workspaceFolder}/.vscode/chrome-profile",
+        "--load-extension=${workspaceFolder}/chrome",
+        "--remote-debugging-port=9222"
+      ],
+      "url": "https://www.facebook.com/",
+      "webRoot": "${workspaceFolder}/chrome"
+    },
+    {
+      "type": "chrome",
+      "request": "attach",
+      "name": "Chrome (Popup Debug)",
+      "port": 9222,
+      "url": "chrome-extension://nachlckjgflghhhclkieojnlmhpopneh/popup/popup.html",
+      "webRoot": "${workspaceFolder}/chrome"
+    }
+  ]
+}
